@@ -5,12 +5,11 @@ package cmd
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
-	"github.com/rwcarlsen/goexif/exif"
 	"github.com/spf13/cobra"
+	"github.com/tajtiattila/metadata"
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -27,10 +26,10 @@ var rootCmd = &cobra.Command{
 		}
 
 		if dest == "" {
-			dest = filepath.Dir(src)
+			dest = src
 		}
 
-		fileInfoList, err := ioutil.ReadDir(src)
+		fileInfoList, err := os.ReadDir(src)
 		if err != nil {
 			return err
 		}
@@ -51,39 +50,38 @@ var rootCmd = &cobra.Command{
 				continue
 			}
 
-			switch filepath.Ext(srcFileName) {
-			case ".jpg", ".jpeg", ".png", ".gif", ".tiff", ".tif":
-				{
-					x, err := exif.Decode(file)
-					if err != nil {
-						fmt.Println("=> Couldn't decode exif", err)
-						continue
-					}
+			defer file.Close()
 
-					date, err := x.DateTime()
-					if err != nil {
-						fmt.Println("=> Couldn't get date", err)
-						continue
-					}
-					destDirPath := filepath.Join(dest, date.Format("2006-01-02_15-04-05"))
-					destDirInfo, err := os.Stat(destDirPath)
-					if err != nil || !destDirInfo.IsDir() {
-						err = os.Mkdir(destDirPath, 0755)
-						if err != nil {
-							fmt.Println(err)
-						}
-					}
-					destFilePath := filepath.Join(
-						destDirPath,
-						srcFileName,
-					)
-					os.Rename(
-						srcFilePath,
-						destFilePath,
-					)
-					fmt.Println("=>", destFilePath)
-					continue
+			metadata, err := metadata.Parse(file)
+			if err != nil {
+				fmt.Println("=> Couldn't decode exif", err)
+				continue
+			}
+			err = file.Close()
+			if err != nil {
+				fmt.Println("=> Couldn't close", err)
+				continue
+			}
+
+			destDirPath := filepath.Join(dest, metadata.DateTimeCreated.Format("2006-01-02"))
+			destDirInfo, err := os.Stat(destDirPath)
+			if err != nil || !destDirInfo.IsDir() {
+				err = os.Mkdir(destDirPath, 0755)
+				if err != nil {
+					fmt.Println(err)
 				}
+			}
+			destFilePath := filepath.Join(
+				destDirPath,
+				srcFileName,
+			)
+			err = os.Rename(
+				srcFilePath,
+				destFilePath,
+			)
+			if err != nil {
+				fmt.Println("=> Couldn't move", err)
+				continue
 			}
 			fmt.Println("=> Skip")
 		}
